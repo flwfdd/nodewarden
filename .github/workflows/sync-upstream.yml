@@ -26,6 +26,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/shuaiplus/nodewarden.git
-          git fetch upstream main
-          git rebase upstream/main
+          git fetch upstream main --tags
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          echo "Latest upstream release: $latest"
+          # Track released versions only: replay commits that are not in
+          # upstream main (our own patches) onto the latest release tag.
+          git rebase --onto "$latest" upstream/main
           git push --force-with-lease origin main
