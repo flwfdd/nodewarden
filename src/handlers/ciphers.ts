@@ -312,12 +312,35 @@ function normalizeCipherForStorage(cipher: Cipher): Cipher {
   return syncCipherComputedAliases(cipher);
 }
 
+const LOGIN_KEY_ALIASES: Record<string, string> = {
+  Uris: 'uris',
+  Uri: 'uri',
+  Username: 'username',
+  Password: 'password',
+  Totp: 'totp',
+  PasswordRevisionDate: 'passwordRevisionDate',
+  Fido2Credentials: 'fido2Credentials',
+};
+
+function canonicalizeKeyAlias(obj: Record<string, any>, alias: string, canonical: string): void {
+  if (!Object.prototype.hasOwnProperty.call(obj, alias)) return;
+  if (!Object.prototype.hasOwnProperty.call(obj, canonical) || obj[canonical] == null) {
+    obj[canonical] = obj[alias];
+  }
+  delete obj[alias];
+}
+
 export function normalizeCipherLoginForStorage(login: any): any {
   if (!login || typeof login !== 'object') return login ?? null;
-  return {
-    ...login,
-    fido2Credentials: Array.isArray(login.fido2Credentials) ? login.fido2Credentials : null,
-  };
+  const next: Record<string, any> = { ...login };
+  // Official Bitwarden clients (rbw, bw CLI, desktop) send PascalCase keys.
+  // Fold them into the camelCase shape and drop the originals so responses
+  // never carry both casings of the same field.
+  for (const [alias, canonical] of Object.entries(LOGIN_KEY_ALIASES)) {
+    canonicalizeKeyAlias(next, alias, canonical);
+  }
+  next.fido2Credentials = Array.isArray(next.fido2Credentials) ? next.fido2Credentials : null;
+  return next;
 }
 
 export function normalizeCipherLoginForCompatibility(
@@ -351,7 +374,11 @@ function normalizeCipherLoginUrisForCompatibility(
 
   for (const uri of uris) {
     if (!uri || typeof uri !== 'object') continue;
-    const next = sanitizeEncryptedObject(uri, ['uri', 'uriChecksum']);
+    const canonicalUri: Record<string, any> = { ...uri };
+    canonicalizeKeyAlias(canonicalUri, 'Uri', 'uri');
+    canonicalizeKeyAlias(canonicalUri, 'Match', 'match');
+    canonicalizeKeyAlias(canonicalUri, 'UriChecksum', 'uriChecksum');
+    const next = sanitizeEncryptedObject(canonicalUri, ['uri', 'uriChecksum']);
     if (!next) continue;
 
     const hasUri = isValidEncString(next.uri);
